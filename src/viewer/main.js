@@ -212,10 +212,11 @@ function registerServiceWorker() {
 
 function renderShell() {
   const sheets = state.document?.sheets || []
+  const hasSheetSidebar = sheets.length > 1
   document.documentElement.classList.toggle('dark', state.dark)
   app.innerHTML = `
-    <div class="preview-shell">
-      ${sheets.length > 1 ? renderSidebar(sheets) : ''}
+    <div class="preview-shell${hasSheetSidebar ? ' has-sheet-sidebar' : ''}">
+      ${hasSheetSidebar ? renderSidebar(sheets) : ''}
       <main class="map-main">
         <header class="map-header">
           <div class="map-identity">
