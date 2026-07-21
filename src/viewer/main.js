@@ -6,6 +6,7 @@ import { parsePresetMapCatalog } from './map-catalog.js'
 import './styles.css'
 
 const app = document.querySelector('#app')
+let guideResizeTimer
 
 const state = {
   mind: null,
@@ -24,9 +25,19 @@ bootstrap()
 async function bootstrap() {
   registerServiceWorker()
   registerFileLaunchHandler()
+  registerGuideViewportResize()
   await loadPresetMaps()
   renderShell()
   renderUsageGuide()
+}
+
+function registerGuideViewportResize() {
+  window.addEventListener('resize', () => {
+    clearTimeout(guideResizeTimer)
+    guideResizeTimer = setTimeout(() => {
+      if (state.sourceKind === 'guide') previewUsageGuide()
+    }, 120)
+  })
 }
 
 async function loadPresetMaps() {
@@ -355,28 +366,77 @@ function renderMindData(data, fillViewport = false) {
     theme: state.dark ? MindElixir.DARK_THEME : MindElixir.THEME,
   })
   state.mind.init(data)
+  if (fillViewport) {
+    configureUsageGuideSpacing(map)
+  }
   state.mind.scaleFit()
   if (fillViewport) {
-    const preferredScale = Math.min(
-      1.65,
-      map.clientWidth * 0.82 / state.mind.nodes.offsetWidth,
-      map.clientHeight * 0.78 / state.mind.nodes.offsetHeight,
-    )
-    const targetScale = Math.max(preferredScale, guideScaleFloor(map.clientWidth))
-    if (state.mind.scaleVal < targetScale) {
-      state.mind.scale(targetScale)
-      state.mind.toCenter()
-      state.mind.move(-map.clientWidth * 0.25, 0)
-    }
+    scaleGuideToViewport(map)
   }
   updateScaleLabel(state.mind.scaleVal)
   state.mind.bus.addListener('scale', updateScaleLabel)
 }
 
-function guideScaleFloor(viewportWidth) {
-  if (viewportWidth >= 1500) return 1.65
-  if (viewportWidth >= 900) return 1.35
-  return 0
+function configureUsageGuideSpacing(map) {
+  const { nodes, container } = state.mind
+  if (!nodes.offsetWidth || !nodes.offsetHeight) return
+
+  const targetAspectRatio = (map.clientWidth * 0.92) / (map.clientHeight * 0.82)
+  const missingWidth = Math.max(0, nodes.offsetHeight * targetAspectRatio - nodes.offsetWidth)
+  const spacingBudget = map.clientWidth >= 900
+    ? Math.max(missingWidth, map.clientWidth * 0.28)
+    : missingWidth
+  if (!spacingBudget) return
+
+  // 引导导图的分支全部位于右侧，需要增加横向层级距离以充分利用宽屏空间。
+  const mainGapLimit = map.clientWidth >= 900 ? 280 : 140
+  const nodeGapLimit = map.clientWidth >= 900 ? 220 : 90
+  container.style.setProperty('--main-gap-x', `${Math.min(mainGapLimit, 65 + spacingBudget * 0.5)}px`)
+  container.style.setProperty('--node-gap-x', `${Math.min(nodeGapLimit, 30 + spacingBudget * 0.35)}px`)
+  state.mind.refresh()
+}
+
+function scaleGuideToViewport(map) {
+  const initialBounds = visibleGuideBounds()
+  if (!initialBounds) return
+
+  const availableWidth = map.clientWidth * 0.92
+  const availableHeight = map.clientHeight * 0.82
+  const scaleRatio = Math.min(availableWidth / initialBounds.width, availableHeight / initialBounds.height, 2.75)
+  state.mind.scale(state.mind.scaleVal * scaleRatio)
+  state.mind.toCenter()
+
+  const guideBounds = visibleGuideBounds()
+  if (!guideBounds) return
+  const mapBounds = map.getBoundingClientRect()
+  const targetLeft = mapBounds.left + mapBounds.width * 0.04
+  const targetCenterY = mapBounds.top + mapBounds.height / 2
+  moveGuideCanvas(targetLeft - guideBounds.left, targetCenterY - (guideBounds.top + guideBounds.height / 2))
+}
+
+function visibleGuideBounds() {
+  const topics = [...state.mind.nodes.querySelectorAll('me-tpc')]
+  if (!topics.length) return null
+
+  const bounds = topics.map(topic => topic.getBoundingClientRect())
+  const left = Math.min(...bounds.map(bound => bound.left))
+  const right = Math.max(...bounds.map(bound => bound.right))
+  const top = Math.min(...bounds.map(bound => bound.top))
+  const bottom = Math.max(...bounds.map(bound => bound.bottom))
+  return { left, right, top, bottom, width: right - left, height: bottom - top }
+}
+
+function moveGuideCanvas(deltaX, deltaY) {
+  const transform = state.mind.map.style.transform
+  const match = transform.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0px\)/)
+  if (!match) {
+    console.warn(`[xmind-preview] 无法解析引导导图的位置：${transform}`)
+    return
+  }
+
+  const x = Number(match[1]) + deltaX
+  const y = Number(match[2]) + deltaY
+  state.mind.map.style.transform = `translate3d(${x}px, ${y}px, 0px) scale(${state.mind.scaleVal})`
 }
 
 function updateScaleLabel(scaleValue) {
@@ -388,19 +448,19 @@ function updateScaleLabel(scaleValue) {
 function createUsageGuideData() {
   const guide = MindElixir.new('XMind Preview 使用指南')
   guide.nodeData.children = [
-    createGuideTopic('01', '打开与安装', [
+    createGuideTopic('1', '打开与安装', [
       '点击右上角“打开”选择 .xmind',
       '或将 .xmind 文件拖入页面',
       '在 Chrome 地址栏点击安装图标',
       '安装后可从应用列表启动',
     ]),
-    createGuideTopic('02', '浏览与关联', [
+    createGuideTopic('2', '浏览与关联', [
       '在系统“打开方式”选择 XMind Preview',
       '具体入口由浏览器和系统决定',
       '使用缩放按钮调整视图',
       '左侧可切换多个 Sheet',
     ]),
-    createGuideTopic('03', '隐私', [
+    createGuideTopic('3', '隐私', [
       '文件仅在当前浏览器本地解析',
       '不会上传到此网站',
     ]),
