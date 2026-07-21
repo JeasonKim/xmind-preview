@@ -2,10 +2,12 @@ import MindElixir from 'mind-elixir'
 import 'mind-elixir/style.css'
 import { convertXmindToMindElixir, importXMindFile } from '@mind-elixir/import-xmind'
 import JSZip from 'jszip'
+import { createFileLaunchCoordinator } from './file-launch-coordinator.js'
 import { parsePresetMapCatalog } from './map-catalog.js'
 import './styles.css'
 
 const app = document.querySelector('#app')
+const fileLaunchCoordinator = createFileLaunchCoordinator()
 const mindLayouts = {
   left: { direction: MindElixir.LEFT, method: 'initLeft' },
   right: { direction: MindElixir.RIGHT, method: 'initRight' },
@@ -32,6 +34,11 @@ async function bootstrap() {
   registerFileLaunchHandler()
   await loadPresetMaps()
   renderShell()
+  const launchedFileHandle = fileLaunchCoordinator.completeShellInitialization()
+  if (launchedFileHandle) {
+    await previewLaunchedFile(launchedFileHandle)
+    return
+  }
   renderUsageGuide()
 }
 
@@ -187,11 +194,18 @@ function registerFileLaunchHandler() {
   if (!('launchQueue' in window)) return
   window.launchQueue.setConsumer(launchParams => {
     const fileHandle = launchParams.files?.[0]
-    if (!fileHandle) {
+    const launchAction = fileLaunchCoordinator.acceptPwaLaunch(fileHandle)
+    if (launchAction.type === 'ignore' || launchAction.type === 'queued') {
+      if (launchAction.type === 'queued' && launchAction.replacedFileHandle) {
+        console.warn('[xmind-preview] 应用初始化期间收到多个文件启动请求，已忽略先前的文件句柄。')
+      }
+      return
+    }
+    if (launchAction.type === 'show-guide') {
       previewUsageGuide()
       return
     }
-    void previewLaunchedFile(fileHandle)
+    void previewLaunchedFile(launchAction.fileHandle)
   })
 }
 
