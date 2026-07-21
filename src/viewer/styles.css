@@ -172,28 +172,6 @@ button {
   outline-offset: -8px;
 }
 
-.empty-state {
-  display: grid;
-  place-content: center;
-  gap: 8px;
-  width: 100%;
-  height: 100%;
-  padding: 24px;
-  text-align: center;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.empty-desc {
-  max-width: 520px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.7;
-}
-
 .status {
   position: absolute;
   inset: 58px auto auto 18px;

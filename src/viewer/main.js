@@ -21,7 +21,7 @@ async function bootstrap() {
   registerServiceWorker()
   registerFileLaunchHandler()
   renderShell()
-  renderEmptyState()
+  renderUsageGuide()
 }
 
 async function previewLaunchedFile(fileHandle) {
@@ -201,7 +201,7 @@ function renderShell() {
   app.querySelector('[data-action="theme"]')?.addEventListener('click', () => {
     state.dark = !state.dark
     renderShell()
-    renderSelectedSheet()
+    renderCurrentMind()
   })
   const map = app.querySelector('#map')
   map?.addEventListener('dragover', event => {
@@ -236,26 +236,90 @@ function renderSidebar(sheets) {
 
 function renderSelectedSheet() {
   const sheet = selectedSheet()
+  if (!sheet) return
+  renderMindData(sheet.data)
+}
+
+function renderUsageGuide() {
+  const isNarrowViewport = window.matchMedia('(max-width: 720px)').matches
+  const direction = isNarrowViewport ? MindElixir.RIGHT : MindElixir.SIDE
+  renderMindData(createUsageGuideData(), direction, isNarrowViewport ? 0.55 : 0)
+}
+
+function renderCurrentMind() {
+  if (state.document) {
+    renderSelectedSheet()
+    return
+  }
+  renderUsageGuide()
+}
+
+function renderMindData(data, direction = MindElixir.SIDE, minimumScale = 0) {
   const map = document.querySelector('#map')
-  if (!sheet || !map) return
+  if (!map) return
 
   state.mind?.destroy?.()
   state.mind = new MindElixir({
     el: map,
-    direction: MindElixir.SIDE,
+    direction,
     editable: false,
     contextMenu: false,
     toolBar: false,
     keypress: false,
     theme: state.dark ? MindElixir.DARK_THEME : MindElixir.THEME,
   })
-  state.mind.init(sheet.data)
+  state.mind.init(data)
   state.mind.scaleFit()
+  if (state.mind.scaleVal < minimumScale) {
+    state.mind.scale(minimumScale)
+    state.mind.toCenter()
+  }
   state.mind.bus.addListener('scale', value => {
     state.scalePercent = Math.round(value * 100)
     const scale = document.querySelector('.scale')
     if (scale) scale.textContent = `${state.scalePercent}%`
   })
+}
+
+function createUsageGuideData() {
+  const guide = MindElixir.new('XMind Preview 使用指南')
+  guide.nodeData.children = [
+    createGuideTopic('打开文件', [
+      '点击右上角“打开”选择 .xmind',
+      '或将 .xmind 文件拖入页面',
+    ]),
+    createGuideTopic('安装应用', [
+      '在 Chrome 地址栏点击安装图标',
+      '安装后可从应用列表启动',
+    ]),
+    createGuideTopic('文件关联', [
+      '在系统“打开方式”选择 XMind Preview',
+      '具体入口由浏览器和系统决定',
+    ]),
+    createGuideTopic('浏览导图', [
+      '使用缩放按钮调整视图',
+      '左侧可切换多个 Sheet',
+    ]),
+    createGuideTopic('隐私', [
+      '文件仅在当前浏览器本地解析',
+      '不会上传到此网站',
+    ]),
+  ]
+  return guide
+}
+
+function createGuideTopic(topic, children) {
+  return {
+    id: `guide-${topic}`,
+    topic,
+    expanded: true,
+    children: children.map((child, index) => ({
+      id: `guide-${topic}-${index}`,
+      topic: child,
+      expanded: true,
+      children: [],
+    })),
+  }
 }
 
 function selectedSheet() {
@@ -272,19 +336,6 @@ function setStatus(message, error = false) {
   if (!status) return
   status.textContent = message
   status.classList.toggle('error', error)
-}
-
-function renderEmptyState() {
-  const map = document.querySelector('#map')
-  const status = document.querySelector('#status')
-  if (status) status.textContent = ''
-  if (!map || state.document) return
-  map.innerHTML = `
-    <div class="empty-state">
-      <div class="empty-title">打开一个 XMind 文件</div>
-      <div class="empty-desc">拖入 .xmind 文件，或点击右上角“打开”。安装为 PWA 后，也可以从系统打开方式里选择 XMind Preview。</div>
-    </div>
-  `
 }
 
 function escapeHtml(value) {
