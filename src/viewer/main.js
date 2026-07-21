@@ -6,7 +6,11 @@ import { parsePresetMapCatalog } from './map-catalog.js'
 import './styles.css'
 
 const app = document.querySelector('#app')
-let guideResizeTimer
+const mindLayouts = {
+  left: { direction: MindElixir.LEFT, method: 'initLeft' },
+  right: { direction: MindElixir.RIGHT, method: 'initRight' },
+  both: { direction: MindElixir.SIDE, method: 'initSide' },
+}
 
 const state = {
   mind: null,
@@ -17,6 +21,7 @@ const state = {
   activePresetMapId: '',
   presetMaps: [],
   dark: window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
+  layout: 'right',
   scalePercent: 100,
 }
 
@@ -25,19 +30,9 @@ bootstrap()
 async function bootstrap() {
   registerServiceWorker()
   registerFileLaunchHandler()
-  registerGuideViewportResize()
   await loadPresetMaps()
   renderShell()
   renderUsageGuide()
-}
-
-function registerGuideViewportResize() {
-  window.addEventListener('resize', () => {
-    clearTimeout(guideResizeTimer)
-    guideResizeTimer = setTimeout(() => {
-      if (state.sourceKind === 'guide') previewUsageGuide()
-    }, 120)
-  })
 }
 
 async function loadPresetMaps() {
@@ -228,6 +223,7 @@ function renderShell() {
               打开
               <input data-action="file" type="file" accept=".xmind,application/vnd.xmind.workbook" />
             </label>
+            ${renderLayoutSwitcher()}
             <button class="icon-button" data-action="zoom-out" title="缩小">-</button>
             <span class="scale">${state.scalePercent}%</span>
             <button class="icon-button" data-action="zoom-in" title="放大">+</button>
@@ -244,6 +240,11 @@ function renderShell() {
       state.selectedSheetId = item.dataset.sheetId
       renderShell()
       renderSelectedSheet()
+    })
+  })
+  app.querySelectorAll('[data-layout]').forEach(button => {
+    button.addEventListener('click', () => {
+      changeMindLayout(button.dataset.layout)
     })
   })
   app.querySelector('[data-action="zoom-out"]')?.addEventListener('click', () => scaleBy(-0.1))
@@ -280,6 +281,16 @@ function renderShell() {
     const file = event.dataTransfer?.files?.[0]
     if (file) void previewLocalXmindFile(file)
   })
+}
+
+function renderLayoutSwitcher() {
+  return `
+    <div class="layout-switch" role="group" aria-label="导图布局">
+      <button class="layout-button${state.layout === 'right' ? ' active' : ''}" data-layout="right" title="右侧布局">右</button>
+      <button class="layout-button${state.layout === 'left' ? ' active' : ''}" data-layout="left" title="左侧布局">左</button>
+      <button class="layout-button${state.layout === 'both' ? ' active' : ''}" data-layout="both" title="双侧布局">双</button>
+    </div>
+  `
 }
 
 function renderMapSourceSelector() {
@@ -341,7 +352,7 @@ function previewUsageGuide() {
 }
 
 function renderUsageGuide() {
-  renderMindData(createUsageGuideData(), true)
+  renderMindData(createUsageGuideData())
 }
 
 function renderCurrentMind() {
@@ -352,14 +363,14 @@ function renderCurrentMind() {
   renderUsageGuide()
 }
 
-function renderMindData(data, fillViewport = false) {
+function renderMindData(data) {
   const map = document.querySelector('#map')
   if (!map) return
 
   state.mind?.destroy?.()
   state.mind = new MindElixir({
     el: map,
-    direction: MindElixir.RIGHT,
+    direction: mindLayouts[state.layout].direction,
     editable: false,
     contextMenu: false,
     toolBar: false,
@@ -367,77 +378,28 @@ function renderMindData(data, fillViewport = false) {
     theme: state.dark ? MindElixir.DARK_THEME : MindElixir.THEME,
   })
   state.mind.init(data)
-  if (fillViewport) {
-    configureUsageGuideSpacing(map)
-  }
   state.mind.scaleFit()
-  if (fillViewport) {
-    scaleGuideToViewport(map)
-  }
+  enableTopicTextSelection()
   updateScaleLabel(state.mind.scaleVal)
   state.mind.bus.addListener('scale', updateScaleLabel)
 }
 
-function configureUsageGuideSpacing(map) {
-  const { nodes, container } = state.mind
-  if (!nodes.offsetWidth || !nodes.offsetHeight) return
-
-  const targetAspectRatio = (map.clientWidth * 0.92) / (map.clientHeight * 0.82)
-  const missingWidth = Math.max(0, nodes.offsetHeight * targetAspectRatio - nodes.offsetWidth)
-  const spacingBudget = map.clientWidth >= 900
-    ? Math.max(missingWidth, map.clientWidth * 0.28)
-    : missingWidth
-  if (!spacingBudget) return
-
-  // 引导导图的分支全部位于右侧，需要增加横向层级距离以充分利用宽屏空间。
-  const mainGapLimit = map.clientWidth >= 900 ? 280 : 140
-  const nodeGapLimit = map.clientWidth >= 900 ? 220 : 90
-  container.style.setProperty('--main-gap-x', `${Math.min(mainGapLimit, 65 + spacingBudget * 0.5)}px`)
-  container.style.setProperty('--node-gap-x', `${Math.min(nodeGapLimit, 30 + spacingBudget * 0.35)}px`)
-  state.mind.refresh()
+function enableTopicTextSelection() {
+  state.mind.nodes.addEventListener('pointerdown', event => {
+    if (event.target instanceof Element && event.target.closest('me-tpc')) event.stopPropagation()
+  })
 }
 
-function scaleGuideToViewport(map) {
-  const initialBounds = visibleGuideBounds()
-  if (!initialBounds) return
+function changeMindLayout(layout) {
+  if (layout === state.layout || !state.mind) return
 
-  const availableWidth = map.clientWidth * 0.92
-  const availableHeight = map.clientHeight * 0.82
-  const scaleRatio = Math.min(availableWidth / initialBounds.width, availableHeight / initialBounds.height, 2.75)
-  state.mind.scale(state.mind.scaleVal * scaleRatio)
-  state.mind.toCenter()
-
-  const guideBounds = visibleGuideBounds()
-  if (!guideBounds) return
-  const mapBounds = map.getBoundingClientRect()
-  const targetLeft = mapBounds.left + mapBounds.width * 0.04
-  const targetCenterY = mapBounds.top + mapBounds.height / 2
-  moveGuideCanvas(targetLeft - guideBounds.left, targetCenterY - (guideBounds.top + guideBounds.height / 2))
-}
-
-function visibleGuideBounds() {
-  const topics = [...state.mind.nodes.querySelectorAll('me-tpc')]
-  if (!topics.length) return null
-
-  const bounds = topics.map(topic => topic.getBoundingClientRect())
-  const left = Math.min(...bounds.map(bound => bound.left))
-  const right = Math.max(...bounds.map(bound => bound.right))
-  const top = Math.min(...bounds.map(bound => bound.top))
-  const bottom = Math.max(...bounds.map(bound => bound.bottom))
-  return { left, right, top, bottom, width: right - left, height: bottom - top }
-}
-
-function moveGuideCanvas(deltaX, deltaY) {
-  const transform = state.mind.map.style.transform
-  const match = transform.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0px\)/)
-  if (!match) {
-    console.warn(`[xmind-preview] 无法解析引导导图的位置：${transform}`)
-    return
-  }
-
-  const x = Number(match[1]) + deltaX
-  const y = Number(match[2]) + deltaY
-  state.mind.map.style.transform = `translate3d(${x}px, ${y}px, 0px) scale(${state.mind.scaleVal})`
+  state.layout = layout
+  state.mind[mindLayouts[layout].method]()
+  state.mind.scaleFit()
+  updateScaleLabel(state.mind.scaleVal)
+  app.querySelectorAll('[data-layout]').forEach(button => {
+    button.classList.toggle('active', button.dataset.layout === layout)
+  })
 }
 
 function updateScaleLabel(scaleValue) {

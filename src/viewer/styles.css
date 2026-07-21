@@ -151,6 +151,37 @@ button {
   gap: 6px;
 }
 
+.layout-switch {
+  display: inline-flex;
+  height: 30px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.layout-button {
+  width: 30px;
+  height: 100%;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.layout-button:last-child {
+  border-right: 0;
+}
+
+.layout-button:hover,
+.layout-button.active {
+  color: var(--active);
+  background: var(--active-soft);
+}
+
 .icon-button,
 .text-button {
   min-width: 32px;
@@ -198,6 +229,13 @@ button {
 #map.dragging {
   outline: 2px solid var(--active);
   outline-offset: -8px;
+}
+
+#map me-tpc,
+#map me-tpc .text {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .status {
