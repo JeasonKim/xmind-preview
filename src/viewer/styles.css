@@ -117,6 +117,28 @@ button {
   white-space: nowrap;
 }
 
+.map-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.source-select {
+  width: min(220px, 32vw);
+  height: 30px;
+  padding: 0 28px 0 9px;
+  overflow: hidden;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
 .controls {
   display: flex;
   align-items: center;
@@ -211,6 +233,14 @@ button {
   .map-header {
     gap: 8px;
     padding: 0 10px;
+  }
+
+  .map-identity {
+    gap: 6px;
+  }
+
+  .source-select {
+    width: 132px;
   }
 
   .file-button,

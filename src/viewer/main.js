@@ -2,6 +2,7 @@ import MindElixir from 'mind-elixir'
 import 'mind-elixir/style.css'
 import { convertXmindToMindElixir, importXMindFile } from '@mind-elixir/import-xmind'
 import JSZip from 'jszip'
+import { parsePresetMapCatalog } from './map-catalog.js'
 import './styles.css'
 
 const app = document.querySelector('#app')
@@ -11,6 +12,9 @@ const state = {
   document: null,
   selectedSheetId: '',
   fileName: '',
+  sourceKind: 'guide',
+  activePresetMapId: '',
+  presetMaps: [],
   dark: window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
   scalePercent: 100,
 }
@@ -20,27 +24,60 @@ bootstrap()
 async function bootstrap() {
   registerServiceWorker()
   registerFileLaunchHandler()
+  await loadPresetMaps()
   renderShell()
   renderUsageGuide()
+}
+
+async function loadPresetMaps() {
+  try {
+    const response = await fetch('./maps/catalog.json', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    state.presetMaps = parsePresetMapCatalog(await response.json())
+  } catch (error) {
+    console.warn(`[xmind-preview] 预置导图清单加载失败，已按空目录处理：${error instanceof Error ? error.message : String(error)}`)
+    state.presetMaps = []
+  }
 }
 
 async function previewLaunchedFile(fileHandle) {
   setStatus('正在读取文件...')
   try {
     const file = await fileHandle.getFile()
-    await previewXmindFile(file)
+    await previewLocalXmindFile(file)
   } catch (error) {
     setStatus(error instanceof Error ? error.message : '文件读取失败', true)
+  }
+}
+
+async function previewLocalXmindFile(file) {
+  try {
+    await previewXmindFile(file)
+  } catch (error) {
+    console.warn(`[xmind-preview] 本地 XMind 文件解析失败：${error instanceof Error ? error.message : String(error)}`)
+    setStatus(error instanceof Error ? error.message : 'XMind 文件解析失败', true)
   }
 }
 
 async function previewXmindFile(file) {
   setStatus('正在解析 XMind...')
   const buffer = await file.arrayBuffer()
-  await previewXmindBuffer(buffer, file.name || 'document.xmind')
+  await previewXmindBuffer(buffer, file.name || 'document.xmind', { kind: 'local' })
 }
 
-async function previewXmindBuffer(buffer, fileName) {
+async function previewPresetMap(source) {
+  setStatus('正在读取预置导图...')
+  try {
+    const response = await fetch(source.file, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    await previewXmindBuffer(await response.arrayBuffer(), source.title, { kind: 'preset', mapId: source.id })
+  } catch (error) {
+    console.warn(`[xmind-preview] 预置导图加载失败 id=${source.id}：${error instanceof Error ? error.message : String(error)}`)
+    setStatus(`无法加载“${source.title}”`, true)
+  }
+}
+
+async function previewXmindBuffer(buffer, fileName, source) {
   const document = await parseXmind(buffer, fileName)
   if (!document.sheets.length) {
     throw new Error('XMind 文件里没有可预览的 Sheet')
@@ -48,6 +85,8 @@ async function previewXmindBuffer(buffer, fileName) {
   state.document?.dispose()
   state.document = document
   state.fileName = fileName
+  state.sourceKind = source.kind
+  state.activePresetMapId = source.mapId || ''
   state.selectedSheetId = document.sheets[0].id
   state.scalePercent = 100
   renderShell()
@@ -143,7 +182,7 @@ function registerFileLaunchHandler() {
   window.launchQueue.setConsumer(launchParams => {
     const fileHandle = launchParams.files?.[0]
     if (!fileHandle) {
-      renderEmptyState()
+      previewUsageGuide()
       return
     }
     void previewLaunchedFile(fileHandle)
@@ -168,7 +207,10 @@ function renderShell() {
       ${sheets.length > 1 ? renderSidebar(sheets) : ''}
       <main class="map-main">
         <header class="map-header">
-          <div class="title">${escapeHtml(selectedSheet()?.title || state.fileName || 'XMind Preview')}</div>
+          <div class="map-identity">
+            <div class="title">${escapeHtml(selectedSheet()?.title || state.fileName || 'XMind Preview')}</div>
+            ${renderMapSourceSelector()}
+          </div>
           <div class="controls">
             <label class="text-button file-button">
               打开
@@ -196,7 +238,16 @@ function renderShell() {
   app.querySelector('[data-action="zoom-in"]')?.addEventListener('click', () => scaleBy(0.1))
   app.querySelector('[data-action="file"]')?.addEventListener('change', event => {
     const file = event.target.files?.[0]
-    if (file) void previewXmindFile(file)
+    if (file) void previewLocalXmindFile(file)
+  })
+  app.querySelector('[data-action="source"]')?.addEventListener('change', event => {
+    const sourceId = event.target.value
+    if (sourceId === 'guide') {
+      previewUsageGuide()
+      return
+    }
+    const source = state.presetMaps.find(item => item.id === sourceId)
+    if (source) void previewPresetMap(source)
   })
   app.querySelector('[data-action="theme"]')?.addEventListener('click', () => {
     state.dark = !state.dark
@@ -215,8 +266,34 @@ function renderShell() {
     event.preventDefault()
     map.classList.remove('dragging')
     const file = event.dataTransfer?.files?.[0]
-    if (file) void previewXmindFile(file)
+    if (file) void previewLocalXmindFile(file)
   })
+}
+
+function renderMapSourceSelector() {
+  const choices = [
+    { id: 'guide', title: '使用指南' },
+    ...state.presetMaps,
+  ]
+  if (state.sourceKind === 'local') {
+    choices.push({ id: 'local', title: `本地文件：${state.fileName}`, disabled: true })
+  }
+  if (choices.length === 1) return ''
+
+  return `
+    <select class="source-select" data-action="source" aria-label="导图内容">
+      ${choices.map(choice => `
+        <option value="${escapeHtml(choice.id)}"${choice.id === activeMapSourceId() ? ' selected' : ''}${choice.disabled ? ' disabled' : ''}>
+          ${escapeHtml(choice.title)}
+        </option>
+      `).join('')}
+    </select>
+  `
+}
+
+function activeMapSourceId() {
+  if (state.sourceKind === 'preset') return state.activePresetMapId
+  return state.sourceKind
 }
 
 function renderSidebar(sheets) {
@@ -240,10 +317,19 @@ function renderSelectedSheet() {
   renderMindData(sheet.data)
 }
 
+function previewUsageGuide() {
+  state.document?.dispose()
+  state.document = null
+  state.fileName = ''
+  state.sourceKind = 'guide'
+  state.activePresetMapId = ''
+  state.scalePercent = 100
+  renderShell()
+  renderUsageGuide()
+}
+
 function renderUsageGuide() {
-  const isNarrowViewport = window.matchMedia('(max-width: 720px)').matches
-  const direction = isNarrowViewport ? MindElixir.RIGHT : MindElixir.SIDE
-  renderMindData(createUsageGuideData(), direction, isNarrowViewport ? 0.55 : 0)
+  renderMindData(createUsageGuideData(), true)
 }
 
 function renderCurrentMind() {
@@ -254,14 +340,14 @@ function renderCurrentMind() {
   renderUsageGuide()
 }
 
-function renderMindData(data, direction = MindElixir.SIDE, minimumScale = 0) {
+function renderMindData(data, fillViewport = false) {
   const map = document.querySelector('#map')
   if (!map) return
 
   state.mind?.destroy?.()
   state.mind = new MindElixir({
     el: map,
-    direction,
+    direction: MindElixir.RIGHT,
     editable: false,
     contextMenu: false,
     toolBar: false,
@@ -270,37 +356,51 @@ function renderMindData(data, direction = MindElixir.SIDE, minimumScale = 0) {
   })
   state.mind.init(data)
   state.mind.scaleFit()
-  if (state.mind.scaleVal < minimumScale) {
-    state.mind.scale(minimumScale)
-    state.mind.toCenter()
+  if (fillViewport) {
+    const preferredScale = Math.min(
+      1.65,
+      map.clientWidth * 0.82 / state.mind.nodes.offsetWidth,
+      map.clientHeight * 0.78 / state.mind.nodes.offsetHeight,
+    )
+    const targetScale = Math.max(preferredScale, guideScaleFloor(map.clientWidth))
+    if (state.mind.scaleVal < targetScale) {
+      state.mind.scale(targetScale)
+      state.mind.toCenter()
+      state.mind.move(-map.clientWidth * 0.25, 0)
+    }
   }
-  state.mind.bus.addListener('scale', value => {
-    state.scalePercent = Math.round(value * 100)
-    const scale = document.querySelector('.scale')
-    if (scale) scale.textContent = `${state.scalePercent}%`
-  })
+  updateScaleLabel(state.mind.scaleVal)
+  state.mind.bus.addListener('scale', updateScaleLabel)
+}
+
+function guideScaleFloor(viewportWidth) {
+  if (viewportWidth >= 1500) return 1.65
+  if (viewportWidth >= 900) return 1.35
+  return 0
+}
+
+function updateScaleLabel(scaleValue) {
+  state.scalePercent = Math.round(scaleValue * 100)
+  const scale = document.querySelector('.scale')
+  if (scale) scale.textContent = `${state.scalePercent}%`
 }
 
 function createUsageGuideData() {
   const guide = MindElixir.new('XMind Preview 使用指南')
   guide.nodeData.children = [
-    createGuideTopic('打开文件', [
+    createGuideTopic('01', '打开与安装', [
       '点击右上角“打开”选择 .xmind',
       '或将 .xmind 文件拖入页面',
-    ]),
-    createGuideTopic('安装应用', [
       '在 Chrome 地址栏点击安装图标',
       '安装后可从应用列表启动',
     ]),
-    createGuideTopic('文件关联', [
+    createGuideTopic('02', '浏览与关联', [
       '在系统“打开方式”选择 XMind Preview',
       '具体入口由浏览器和系统决定',
-    ]),
-    createGuideTopic('浏览导图', [
       '使用缩放按钮调整视图',
       '左侧可切换多个 Sheet',
     ]),
-    createGuideTopic('隐私', [
+    createGuideTopic('03', '隐私', [
       '文件仅在当前浏览器本地解析',
       '不会上传到此网站',
     ]),
@@ -308,14 +408,15 @@ function createUsageGuideData() {
   return guide
 }
 
-function createGuideTopic(topic, children) {
+function createGuideTopic(order, title, children) {
+  const topic = `${order} ${title}`
   return {
     id: `guide-${topic}`,
     topic,
     expanded: true,
     children: children.map((child, index) => ({
       id: `guide-${topic}-${index}`,
-      topic: child,
+      topic: `${order}.${index + 1} ${child}`,
       expanded: true,
       children: [],
     })),

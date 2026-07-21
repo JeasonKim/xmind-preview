@@ -4,6 +4,24 @@
 
 首页默认展示一张“XMind Preview 使用指南”思维导图；用户选择或拖入自己的文件后，预览内容会替换为该 XMind 文件。
 
+## 预置导图切换
+
+将要展示的 `.xmind` 文件放入 `public/maps/`，再登记到 `public/maps/catalog.json`。发布后，页面会在标题旁显示内容选择器，用户可在使用指南和预置导图之间切换：
+
+```json
+{
+  "maps": [
+    {
+      "id": "sales-plan",
+      "title": "销售计划",
+      "file": "./maps/sales-plan.xmind"
+    }
+  ]
+}
+```
+
+预置导图会随 GitHub Pages 一起公开发布，因此只适合放可公开访问的内容。
+
 ## 使用方式
 
 在 Chrome 或其他 Chromium 浏览器中打开部署地址，点击地址栏右侧的安装图标，安装 `XMind Preview`。
