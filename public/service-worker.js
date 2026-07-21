@@ -1,4 +1,4 @@
-const CACHE_NAME = 'xmind-preview-v2'
+const CACHE_NAME = 'xmind-preview-v3'
 const APP_SHELL = [
   '',
   'index.html',
@@ -31,15 +31,15 @@ self.addEventListener('fetch', event => {
     ? new Request(new URL('index.html', self.registration.scope).href)
     : event.request
 
+  // 在线时优先获取最新应用资源；离线时才使用上次成功缓存的版本。
   event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached
-      return fetch(request).then(response => {
+    fetch(request)
+      .then(response => {
         if (!response || response.status !== 200) return response
         const copy = response.clone()
         caches.open(CACHE_NAME).then(cache => cache.put(request, copy))
         return response
       })
-    })
+      .catch(() => caches.match(request))
   )
 })
