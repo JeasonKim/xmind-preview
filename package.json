@@ -1,0 +1,30 @@
+{
+  "name": "xmind-preview",
+  "version": "0.1.0",
+  "description": "Lightweight installable XMind preview PWA powered by Mind Elixir.",
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test"
+  },
+  "files": [
+    "dist",
+    "public",
+    "src",
+    ".github",
+    "index.html",
+    "vite.config.js",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@mind-elixir/import-xmind": "1.0.8",
+    "jszip": "3.10.1",
+    "mind-elixir": "5.14.0"
+  },
+  "devDependencies": {
+    "vite": "8.0.16"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "XMind Preview",
+  "short_name": "XMind Preview",
+  "description": "本地 XMind 文件预览器",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f7f4",
+  "theme_color": "#256f74",
+  "icons": [
+    {
+      "src": "./pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/vnd.xmind.workbook": [
+          ".xmind"
+        ],
+        "application/octet-stream": [
+          ".xmind"
+        ]
+      }
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
+}
